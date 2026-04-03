@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meet Coach — Welcome</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+      background: radial-gradient(ellipse at 60% 0%, rgba(16,185,129,0.08) 0%, transparent 60%),
+                  radial-gradient(ellipse at 0% 100%, rgba(99,102,241,0.07) 0%, transparent 60%),
+                  #0d0f18;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+      padding: 24px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 24px;
+      padding: 40px 44px;
+      width: 480px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    }
+
+    .logo { font-size: 32px; margin-bottom: 8px; }
+    h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+    .sub { font-size: 14px; color: #64748b; margin-bottom: 36px; line-height: 1.5; }
+
+    /* Steps */
+    .step { display: none; }
+    .step.active { display: block; }
+
+    label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #64748b;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+
+    input[type="text"], input[type="email"] {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1.5px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      color: #e2e8f0;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+      margin-bottom: 22px;
+    }
+    input:focus { border-color: #10b981; }
+
+    /* Team cards */
+    .team-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .team-card {
+      border: 1.5px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+      background: rgba(255,255,255,0.03);
+    }
+    .team-card:hover { background: rgba(255,255,255,0.07); transform: translateY(-1px); }
+    .team-card.selected {
+      border-color: #10b981;
+      background: rgba(16,185,129,0.1);
+    }
+    .team-card.selected[data-team="coaches"] { border-color: #6366f1; background: rgba(99,102,241,0.1); }
+    .team-card.selected[data-team="gmt_calls"] { border-color: #f59e0b; background: rgba(245,158,11,0.1); }
+
+    .team-emoji { font-size: 22px; margin-bottom: 6px; }
+    .team-name { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+    .team-desc { font-size: 11px; color: #475569; margin-top: 3px; line-height: 1.4; }
+
+    /* Buttons */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+    .btn-secondary { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; margin-top: 8px; }
+
+    /* Success */
+    .success-icon { font-size: 56px; text-align: center; margin-bottom: 16px; }
+    .success-title { font-size: 22px; font-weight: 800; text-align: center; margin-bottom: 8px; }
+    .success-sub { font-size: 14px; color: #64748b; text-align: center; line-height: 1.6; margin-bottom: 28px; }
+
+    .tip-box {
+      background: rgba(16,185,129,0.07);
+      border: 1px solid rgba(16,185,129,0.2);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12.5px;
+      color: #6ee7b7;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .tip-box strong { color: #10b981; }
+
+    .error-msg { font-size: 12px; color: #ef4444; margin-top: -16px; margin-bottom: 14px; }
+    #loading { display: none; font-size: 13px; color: #64748b; text-align: center; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- Step 1: Name + Email -->
+    <div class="step active" id="step-1">
+      <div class="logo">🎯</div>
+      <h1>Welcome to Meet Coach</h1>
+      <p class="sub">AI-powered call coaching for Sova Health teams. Set up takes 30 seconds.</p>
+
+      <label>Your Name</label>
+      <input type="text" id="user-name" placeholder="e.g. Divya" autocomplete="name" />
+
+      <label>Work Email</label>
+      <input type="email" id="user-email" placeholder="you@sovahealth.com" autocomplete="email" />
+      <div class="error-msg" id="email-error" style="display:none"></div>
+
+      <button class="btn btn-primary" onclick="goStep2()">Continue →</button>
+    </div>
+
+    <!-- Step 2: Team Selection -->
+    <div class="step" id="step-2">
+      <div class="logo">👥</div>
+      <h1>Select your team</h1>
+      <p class="sub">This determines your call rubric and scoring criteria.</p>
+
+      <div class="team-grid">
+        <div class="team-card" data-team="expert_consult" onclick="selectTeam(this)">
+          <div class="team-emoji">🧬</div>
+          <div class="team-name">Expert Consult</div>
+          <div class="team-desc">Patient consultation & gut health guidance</div>
+        </div>
+        <div class="team-card" data-team="coaches" onclick="selectTeam(this)">
+          <div class="team-emoji">🎯</div>
+          <div class="team-name">Coaches</div>
+          <div class="team-desc">1:1 coaching & team development calls</div>
+        </div>
+        <div class="team-card" data-team="gmt_calls" onclick="selectTeam(this)">
+          <div class="team-emoji">📞</div>
+          <div class="team-name">GMT Calls</div>
+          <div class="team-desc">Sales & discovery calls for gut microbiome tests</div>
+        </div>
+      </div>
+
+      <div class="error-msg" id="team-error" style="display:none">Please select a team to continue</div>
+      <button class="btn btn-primary" id="step2-btn" onclick="completeSetup()">Get Started →</button>
+      <button class="btn btn-secondary" onclick="goStep1()">← Back</button>
+      <div id="loading">Setting up your account...</div>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div class="step" id="step-3">
+      <div class="success-icon">🎉</div>
+      <div class="success-title">You're all set!</div>
+      <p class="success-sub">Meet Coach is ready. Join a Google Meet call and the coaching panel will appear automatically.</p>
+
+      <div class="tip-box">
+        <strong>💡 Before your next call:</strong> Enable captions inside Meet using the <strong>CC button</strong> in the toolbar. Meet Coach uses captions to capture the transcript.
+      </div>
+
+      <button class="btn btn-primary" onclick="openMeet()">Open Google Meet</button>
+      <button class="btn btn-secondary" onclick="window.close()">Close this tab</button>
+    </div>
+
+  </div>
+
+  <script type="module" src="onboarding.js"></script>
+</body>
+</html>

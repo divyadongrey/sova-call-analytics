@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 268px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0d0f18;
+      color: #e2e8f0;
+      padding: 16px;
+    }
+
+    .logo-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .logo-icon { font-size: 20px; }
+    .logo-text { font-size: 14px; font-weight: 800; }
+    .logo-version { font-size: 10px; color: #334155; }
+
+    /* User card */
+    .user-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .user-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      background: rgba(16,185,129,0.15);
+      flex-shrink: 0;
+    }
+    .user-name { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+    .user-email { font-size: 11px; color: #475569; margin-top: 1px; }
+    .team-pill {
+      font-size: 10px; font-weight: 700;
+      padding: 2px 8px; border-radius: 100px;
+      margin-top: 4px; display: inline-block;
+    }
+    .pill-expert_consult { background: rgba(16,185,129,0.12); color: #34d399; }
+    .pill-coaches { background: rgba(99,102,241,0.12); color: #a5b4fc; }
+    .pill-gmt_calls { background: rgba(245,158,11,0.12); color: #fbbf24; }
+    .pill-unknown { background: rgba(100,116,139,0.12); color: #64748b; }
+
+    /* No-setup state */
+    #no-setup { display: none; }
+    .setup-msg { font-size: 12.5px; color: #64748b; line-height: 1.5; margin-bottom: 12px; text-align: center; }
+
+    /* Buttons */
+    button {
+      all: unset;
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 9px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 6px;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.82; }
+    .btn-primary { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+    .btn-secondary { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); color: #94a3b8; }
+    .btn-admin { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); color: #f87171; }
+
+    .divider { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 8px 0; }
+
+    .tip {
+      font-size: 11px; color: #334155;
+      background: rgba(255,255,255,0.02);
+      border-radius: 6px; padding: 8px 10px;
+      line-height: 1.55; margin-top: 4px;
+    }
+    .tip strong { color: #475569; }
+  </style>
+</head>
+<body>
+
+  <div class="logo-row">
+    <span class="logo-icon">🎯</span>
+    <div>
+      <div class="logo-text">Meet Coach</div>
+      <div class="logo-version">Sova Health · v2.0</div>
+    </div>
+  </div>
+
+  <!-- Logged-in state -->
+  <div id="user-state">
+    <div class="user-card">
+      <div class="user-avatar" id="team-emoji">🎯</div>
+      <div>
+        <div class="user-name" id="user-name">—</div>
+        <div class="user-email" id="user-email">—</div>
+        <span class="team-pill" id="team-pill">—</span>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="openMeet()">▶ Open Google Meet</button>
+    <hr class="divider" />
+    <button class="btn-secondary" onclick="reOnboard()">↩ Change Team</button>
+    <button class="btn-admin" onclick="openAdmin()">🔐 Admin Panel</button>
+  </div>
+
+  <!-- Not set up state -->
+  <div id="no-setup">
+    <p class="setup-msg">Complete onboarding to start using Meet Coach.</p>
+    <button class="btn-primary" onclick="openOnboarding()">Set Up Meet Coach →</button>
+    <hr class="divider" />
+    <button class="btn-admin" onclick="openAdmin()">🔐 Admin Panel</button>
+  </div>
+
+  <div class="tip">
+    <strong>Tip:</strong> Enable <strong>CC (captions)</strong> in Meet for transcript capture.
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

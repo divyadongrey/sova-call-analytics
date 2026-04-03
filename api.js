@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ⚠️  Paste your deployed Apps Script URL here (see README for instructions)
-export const SCRIPT_URL = 'https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec';
+export const SCRIPT_URL = 'https://script.google.com/a/macros/sova.health/s/AKfycbz9EV9oQMrYI8Qw3AaJoHzgpKgsBSUzlgmz8dP_vV24WPYVZQ4AaIqAIrhJYBF6MWBX/exec';
 
 export const ADMIN_PASSWORD = 'sovahealth@123';
 

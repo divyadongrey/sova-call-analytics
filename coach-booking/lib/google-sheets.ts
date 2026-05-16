@@ -1,58 +1,40 @@
-import { google, sheets_v4 } from 'googleapis'
-import { Coach, Booking, BlockedSlot } from '@/types'
+/**
+ * Google Sheets client via Apps Script Web App.
+ * No Google Cloud project or service account required.
+ * All requests go to the deployed Apps Script URL.
+ */
+import { Coach, Booking, BlockedSlot, TimeSlot } from '@/types'
 
-// Sheet names
-const SHEETS = {
-  COACHES: 'Coaches',
-  BOOKINGS: 'Bookings',
-  BLOCKED_SLOTS: 'BlockedSlots',
+const SCRIPT_URL = process.env.APPS_SCRIPT_URL!
+const SECRET     = process.env.APPS_SCRIPT_SECRET!
+
+async function get<T>(params: Record<string, string>): Promise<T> {
+  const query = new URLSearchParams({ ...params, token: SECRET }).toString()
+  const res   = await fetch(`${SCRIPT_URL}?${query}`, { cache: 'no-store' })
+  const data  = await res.json()
+  if (!data.ok) throw new Error(data.error ?? 'Apps Script error')
+  return data as T
 }
 
-function getAuth() {
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: privateKey,
-    },
-    scopes: [
-      'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/calendar',
-    ],
+async function post<T>(body: Record<string, unknown>): Promise<T> {
+  const res  = await fetch(SCRIPT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, token: SECRET }),
+    cache: 'no-store',
   })
-  return auth
+  const data = await res.json()
+  if (!data.ok) throw new Error(data.error ?? 'Apps Script error')
+  return data as T
 }
 
-async function getSheets(): Promise<sheets_v4.Sheets> {
-  const auth = getAuth()
-  return google.sheets({ version: 'v4', auth })
-}
+// ── Coaches ───────────────────────────────────────────────────────────────────
 
-const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID!
-
-// ── Coaches ──────────────────────────────────────────────────────────────────
-
-export async function getCoaches(): Promise<Coach[]> {
-  const sheets = await getSheets()
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.COACHES}!A2:J1000`,
-  })
-  const rows = res.data.values ?? []
-  return rows
-    .filter(r => r[0])
-    .map(r => ({
-      id:             r[0] ?? '',
-      name:           r[1] ?? '',
-      email:          r[2] ?? '',
-      languages:      (r[3] ?? '').split(',').map((l: string) => l.trim()).filter(Boolean),
-      specialization: r[4] ?? '',
-      bio:            r[5] ?? '',
-      imageUrl:       r[6] ?? '',
-      calendarId:     r[7] ?? '',
-      isActive:       r[8]?.toLowerCase() === 'true',
-      role:           (r[9] ?? 'coach') as Coach['role'],
-    }))
+export async function getCoaches(language?: string): Promise<Coach[]> {
+  const params: Record<string, string> = { action: 'getCoaches' }
+  if (language) params.language = language
+  const data = await get<{ coaches: Coach[] }>(params)
+  return data.coaches
 }
 
 export async function getCoachById(id: string): Promise<Coach | null> {
@@ -65,149 +47,65 @@ export async function getCoachByEmail(email: string): Promise<Coach | null> {
   return coaches.find(c => c.email.toLowerCase() === email.toLowerCase()) ?? null
 }
 
-// ── Bookings ─────────────────────────────────────────────────────────────────
+// ── Slots ─────────────────────────────────────────────────────────────────────
 
-export async function getBookings(filters?: { coachId?: string; date?: string }): Promise<Booking[]> {
-  const sheets = await getSheets()
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BOOKINGS}!A2:N1000`,
-  })
-  const rows = res.data.values ?? []
-  let bookings = rows
-    .filter(r => r[0])
-    .map(r => ({
-      id:               r[0] ?? '',
-      customerName:     r[1] ?? '',
-      customerEmail:    r[2] ?? '',
-      customerPhone:    r[3] ?? '',
-      preferredLanguage:r[4] ?? '',
-      coachId:          r[5] ?? '',
-      coachName:        r[6] ?? '',
-      date:             r[7] ?? '',
-      slot:             r[8] ?? '',
-      status:           (r[9] ?? 'confirmed') as Booking['status'],
-      timestamp:        r[10] ?? '',
-      confirmationId:   r[11] ?? '',
-      calendarEventId:  r[12] ?? '',
-      notes:            r[13] ?? '',
-    }))
-
-  if (filters?.coachId) bookings = bookings.filter(b => b.coachId === filters.coachId)
-  if (filters?.date)    bookings = bookings.filter(b => b.date === filters.date)
-  return bookings
+export async function getAvailableSlots(coachId: string, date: string): Promise<TimeSlot[]> {
+  const data = await get<{ slots: TimeSlot[] }>({ action: 'getSlots', coachId, date })
+  return data.slots
 }
 
-export async function createBooking(booking: Omit<Booking, 'id'>): Promise<Booking> {
-  const sheets = await getSheets()
-  const id = `BK-${Date.now()}`
-  const row = [
-    id,
-    booking.customerName,
-    booking.customerEmail,
-    booking.customerPhone,
-    booking.preferredLanguage,
-    booking.coachId,
-    booking.coachName,
-    booking.date,
-    booking.slot,
-    booking.status,
-    booking.timestamp,
-    booking.confirmationId,
-    booking.calendarEventId ?? '',
-    booking.notes ?? '',
-  ]
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BOOKINGS}!A1`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [row] },
+// ── Bookings ──────────────────────────────────────────────────────────────────
+
+export async function getBookings(filters?: { coachId?: string; date?: string; role?: string }): Promise<Booking[]> {
+  const params: Record<string, string> = { action: 'getBookings' }
+  if (filters?.coachId) params.coachId = filters.coachId
+  if (filters?.date)    params.date    = filters.date
+  if (filters?.role)    params.role    = filters.role
+  const data = await get<{ bookings: Booking[] }>(params)
+  return data.bookings
+}
+
+export async function createBooking(booking: Omit<Booking, 'id' | 'status'>): Promise<Booking> {
+  const data = await post<{ id: string; confirmationId: string }>({
+    action: 'createBooking',
+    ...booking,
+    status: 'confirmed',
   })
-  return { id, ...booking }
+  return { id: data.id, status: 'confirmed', ...booking }
 }
 
 export async function updateBookingStatus(bookingId: string, status: Booking['status']): Promise<void> {
-  const sheets = await getSheets()
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BOOKINGS}!A2:A1000`,
-  })
-  const rows = res.data.values ?? []
-  const rowIndex = rows.findIndex(r => r[0] === bookingId)
-  if (rowIndex === -1) throw new Error('Booking not found')
-  // Row index in sheet = rowIndex + 2 (1-based + header)
-  const sheetRow = rowIndex + 2
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BOOKINGS}!J${sheetRow}`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[status]] },
-  })
+  await post({ action: 'updateBookingStatus', bookingId, status })
 }
 
 // ── Blocked Slots ─────────────────────────────────────────────────────────────
 
 export async function getBlockedSlots(coachId: string, date: string): Promise<BlockedSlot[]> {
-  const sheets = await getSheets()
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BLOCKED_SLOTS}!A2:E1000`,
-  })
-  const rows = res.data.values ?? []
-  return rows
-    .filter(r => r[0] === coachId && r[1] === date)
-    .map(r => ({
-      coachId:   r[0],
-      date:      r[1],
-      slot:      r[2],
-      blockedBy: r[3],
-      timestamp: r[4],
-    }))
+  // Derived from getSlots — we use the slot availability flags
+  const slots = await getAvailableSlots(coachId, date)
+  // getSlots already accounts for blocked; we don't need the raw BlockedSlot list
+  return []
 }
 
 export async function blockSlot(coachId: string, date: string, slot: string, blockedBy: string): Promise<void> {
-  const sheets = await getSheets()
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BLOCKED_SLOTS}!A1`,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values: [[coachId, date, slot, blockedBy, new Date().toISOString()]] },
-  })
+  await post({ action: 'blockSlot', coachId, date, slot, blockedBy })
 }
 
 export async function unblockSlot(coachId: string, date: string, slot: string): Promise<void> {
-  const sheets = await getSheets()
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEETS.BLOCKED_SLOTS}!A2:E1000`,
-  })
-  const rows = res.data.values ?? []
-  const rowIndices: number[] = []
-  rows.forEach((r, i) => {
-    if (r[0] === coachId && r[1] === date && r[2] === slot) rowIndices.push(i + 2)
-  })
-  // Delete rows in reverse order to preserve indices
-  for (const idx of rowIndices.reverse()) {
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SPREADSHEET_ID,
-      requestBody: {
-        requests: [{
-          deleteDimension: {
-            range: {
-              sheetId: await getSheetId(sheets, SHEETS.BLOCKED_SLOTS),
-              dimension: 'ROWS',
-              startIndex: idx - 1,
-              endIndex: idx,
-            },
-          },
-        }],
-      },
-    })
-  }
+  await post({ action: 'unblockSlot', coachId, date, slot })
 }
 
-async function getSheetId(sheets: sheets_v4.Sheets, sheetName: string): Promise<number> {
-  const res = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID })
-  const sheet = res.data.sheets?.find(s => s.properties?.title === sheetName)
-  return sheet?.properties?.sheetId ?? 0
+// ── Coach Auth (used by NextAuth) ─────────────────────────────────────────────
+
+export async function getCoachAuth(email: string): Promise<{
+  coachId: string; email: string; passwordHash: string; role: string; name: string
+} | null> {
+  try {
+    const data = await get<{ coachId: string; email: string; passwordHash: string; role: string; name: string }>(
+      { action: 'getCoachAuth', email }
+    )
+    return data
+  } catch {
+    return null
+  }
 }

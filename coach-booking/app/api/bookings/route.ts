@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import {
-  createBooking, getBookings, getCoachById, getBlockedSlots,
-} from '@/lib/google-sheets'
+import { createBooking, getBookings, getCoachById } from '@/lib/google-sheets'
 import { createCalendarEvent } from '@/lib/google-calendar'
 import { sendBookingConfirmation, sendCoachNotification } from '@/lib/email'
 import { generateConfirmationId, getBookingDate } from '@/lib/utils'
@@ -27,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const bookingDate = getBookingDate()
 
-    // Validate slot label is valid
+    // Validate slot label
     const validSlot = ALL_SLOTS.find(s => s.label === data.slot)
     if (!validSlot) return NextResponse.json({ error: 'Invalid slot' }, { status: 400 })
 
@@ -37,22 +35,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Coach not found' }, { status: 404 })
     }
 
-    // Double-booking check
-    const existingBookings = await getBookings({ coachId: data.coachId, date: bookingDate })
-    const alreadyBooked = existingBookings.some(
-      b => b.slot === data.slot && b.status !== 'cancelled'
-    )
-    if (alreadyBooked) {
-      return NextResponse.json({ error: 'Slot already booked' }, { status: 409 })
-    }
-
-    // Blocked slot check
-    const blocked = await getBlockedSlots(data.coachId, bookingDate)
-    if (blocked.some(b => b.slot === data.slot)) {
-      return NextResponse.json({ error: 'Slot is blocked' }, { status: 409 })
-    }
-
     const confirmationId = generateConfirmationId()
+
+    // Apps Script handles double-booking and blocked-slot checks atomically
     const booking = await createBooking({
       customerName:      data.customerName,
       customerEmail:     data.customerEmail,
@@ -62,12 +47,11 @@ export async function POST(req: NextRequest) {
       coachName:         coach.name,
       date:              bookingDate,
       slot:              data.slot,
-      status:            'confirmed',
       timestamp:         new Date().toISOString(),
       confirmationId,
     })
 
-    // Google Calendar event (non-blocking)
+    // Google Calendar event (non-blocking, optional)
     const calendarEventId = await createCalendarEvent(booking, coach)
     if (calendarEventId) booking.calendarEventId = calendarEventId
 
@@ -88,8 +72,13 @@ export async function POST(req: NextRequest) {
         customerEmail:  booking.customerEmail,
       },
     })
-  } catch (err) {
-    if (err instanceof z.ZodError) return NextResponse.json({ error: err.issues }, { status: 400 })
+  } catch (err: any) {
+    if (err?.message?.includes('already booked') || err?.message?.includes('blocked')) {
+      return NextResponse.json({ error: err.message }, { status: 409 })
+    }
+    if (err?.constructor?.name === 'ZodError') {
+      return NextResponse.json({ error: err.issues }, { status: 400 })
+    }
     console.error('POST /api/bookings error:', err)
     return NextResponse.json({ error: 'Booking failed' }, { status: 500 })
   }
@@ -106,11 +95,7 @@ export async function GET(req: NextRequest) {
     const role       = (session.user as any).role
     const coachId    = (session.user as any).coachId
 
-    const filters = role === 'admin'
-      ? { date: dateFilter }
-      : { coachId, date: dateFilter }
-
-    const bookings = await getBookings(filters)
+    const bookings = await getBookings({ coachId: role === 'admin' ? undefined : coachId, date: dateFilter, role })
     return NextResponse.json({ bookings })
   } catch (err) {
     console.error('GET /api/bookings error:', err)

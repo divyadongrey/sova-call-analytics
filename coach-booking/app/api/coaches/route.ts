@@ -6,16 +6,10 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const language = searchParams.get('language')
 
-    let coaches = await getCoaches()
-    coaches = coaches.filter(c => c.isActive)
+    // Apps Script filters by language and isActive=true
+    const coaches = await getCoaches(language ?? undefined)
 
-    if (language) {
-      coaches = coaches.filter(c =>
-        c.languages.some(l => l.toLowerCase() === language.toLowerCase())
-      )
-    }
-
-    // Never expose sensitive fields to public
+    // Strip server-only fields before sending to browser
     const safe = coaches.map(({ id, name, languages, specialization, bio, imageUrl }) => ({
       id, name, languages, specialization, bio, imageUrl,
     }))

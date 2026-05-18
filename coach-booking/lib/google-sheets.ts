@@ -109,3 +109,25 @@ export async function getCoachAuth(email: string): Promise<{
     return null
   }
 }
+
+// ── Invite Links ──────────────────────────────────────────────────────────────
+
+export async function generateInvite(coachId: string, email: string, role: string, name: string): Promise<{ token: string; expiresAt: string }> {
+  const data = await post<{ token: string; expiresAt: string }>({ action: 'generateInvite', coachId, email, role, name })
+  return data
+}
+
+export async function validateInvite(token: string): Promise<{ coachId: string; email: string; role: string; name: string } | null> {
+  try {
+    const data = await get<{ coachId: string; email: string; role: string; name: string }>(
+      { action: 'validateInvite', token }
+    )
+    return data
+  } catch {
+    return null
+  }
+}
+
+export async function consumeInvite(token: string, passwordHash: string): Promise<void> {
+  await post({ action: 'consumeInvite', token, passwordHash })
+}

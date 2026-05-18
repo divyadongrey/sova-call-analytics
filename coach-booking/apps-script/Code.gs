@@ -18,6 +18,7 @@ const SHEETS = {
   BOOKINGS:     'Bookings',
   BLOCKED:      'BlockedSlots',
   AUTH:         'CoachAuth',
+  INVITES:      'Invites',
 };
 
 const ALL_SLOTS = [
@@ -35,11 +36,12 @@ function doGet(e) {
   try {
     const action = e.parameter.action || '';
 
-    if (action === 'ping')          return ok({ status: 'connected' });
-    if (action === 'getCoaches')    return getCoaches(e.parameter);
-    if (action === 'getSlots')      return getSlots(e.parameter);
-    if (action === 'getBookings')   return requireToken(e, getBookings);
-    if (action === 'getCoachAuth')  return requireToken(e, getCoachAuth);
+    if (action === 'ping')            return ok({ status: 'connected' });
+    if (action === 'getCoaches')      return getCoaches(e.parameter);
+    if (action === 'getSlots')        return getSlots(e.parameter);
+    if (action === 'getBookings')     return requireToken(e, getBookings);
+    if (action === 'getCoachAuth')    return requireToken(e, getCoachAuth);
+    if (action === 'validateInvite')  return validateInvite(e.parameter);
 
     return err('Unknown action: ' + action);
   } catch (ex) {
@@ -58,6 +60,8 @@ function doPost(e) {
     if (action === 'updateBookingStatus') return requireTokenBody(body, updateBookingStatus);
     if (action === 'blockSlot')           return requireTokenBody(body, blockSlot);
     if (action === 'unblockSlot')         return requireTokenBody(body, unblockSlot);
+    if (action === 'generateInvite')      return requireTokenBody(body, generateInvite);
+    if (action === 'consumeInvite')       return consumeInvite(body);
 
     return err('Unknown action: ' + action);
   } catch (ex) {
@@ -245,6 +249,82 @@ function getCoachAuth(params) {
   return err('Coach not found');
 }
 
+// ─── Invite Links ─────────────────────────────────────────────────────────────
+// Invites sheet columns: token | coachId | email | role | name | used | expiresAt | createdAt
+
+function generateInvite(body) {
+  const { coachId, email, role, name } = body;
+  if (!coachId || !email) return err('coachId and email required');
+
+  const token     = Utilities.getUuid();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+  const createdAt = new Date().toISOString();
+
+  getSheet(SHEETS.INVITES).appendRow([token, coachId, email, role || 'coach', name || '', 'false', expiresAt, createdAt]);
+  return ok({ token, expiresAt });
+}
+
+function validateInvite(params) {
+  const { token } = params;
+  if (!token) return err('Token required');
+
+  const sheet = getSheet(SHEETS.INVITES);
+  const rows  = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === token) {
+      if (rows[i][5] === 'true') return err('Invite already used');
+      if (new Date(rows[i][6]) < new Date()) return err('Invite expired');
+      return ok({ coachId: rows[i][1], email: rows[i][2], role: rows[i][3], name: rows[i][4] });
+    }
+  }
+  return err('Invalid invite token');
+}
+
+function consumeInvite(body) {
+  const { token, passwordHash } = body;
+  if (!token || !passwordHash) return err('Token and passwordHash required');
+
+  const inviteSheet = getSheet(SHEETS.INVITES);
+  const inviteRows  = inviteSheet.getDataRange().getValues();
+
+  let inviteRow = null;
+  let inviteIdx = -1;
+  for (let i = 1; i < inviteRows.length; i++) {
+    if (inviteRows[i][0] === token) {
+      if (inviteRows[i][5] === 'true') return err('Invite already used');
+      if (new Date(inviteRows[i][6]) < new Date()) return err('Invite expired');
+      inviteRow = inviteRows[i];
+      inviteIdx = i + 1;
+      break;
+    }
+  }
+  if (!inviteRow) return err('Invalid invite token');
+
+  const coachId = inviteRow[1];
+  const email   = inviteRow[2];
+  const role    = inviteRow[3];
+  const name    = inviteRow[4];
+
+  // Upsert into CoachAuth
+  const authSheet = getSheet(SHEETS.AUTH);
+  const authRows  = authSheet.getDataRange().getValues();
+  let found = false;
+  for (let i = 1; i < authRows.length; i++) {
+    if (String(authRows[i][1]).toLowerCase() === email.toLowerCase()) {
+      authSheet.getRange(i + 1, 3).setValue(passwordHash);
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    authSheet.appendRow([coachId, email, passwordHash, role, name]);
+  }
+
+  // Mark invite as used
+  inviteSheet.getRange(inviteIdx, 6).setValue('true');
+  return ok({ email });
+}
+
 // ─── Setup: create all sheets + headers ──────────────────────────────────────
 // Run this function once from the Apps Script editor: Run → setupSheets
 
@@ -270,11 +350,11 @@ function setupSheets() {
     {
       name: SHEETS.AUTH,
       headers: ['coachId','email','passwordHash','role','name'],
-      note: 'Generate bcrypt hashes using: node scripts/hash-password.js <password>',
-      sample: [
-        ['C001','priya@example.com','PASTE_BCRYPT_HASH_HERE','coach','Priya Sharma'],
-        ['ADMIN1','admin@example.com','PASTE_BCRYPT_HASH_HERE','admin','Admin User'],
-      ],
+      note: 'Populated automatically when coaches accept their invite link',
+    },
+    {
+      name: SHEETS.INVITES,
+      headers: ['token','coachId','email','role','name','used','expiresAt','createdAt'],
     },
   ];
 

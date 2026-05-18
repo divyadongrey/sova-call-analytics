@@ -1,5 +1,8 @@
 # Coach Booking Platform – Deployment Guide
 
+> **No Google Cloud project required.** The backend runs entirely inside your
+> Google Sheet via Apps Script. Setup takes ~5 minutes.
+
 ## Architecture Overview
 
 ```
@@ -12,12 +15,20 @@ Next.js App (Vercel)
     ├── /login            → Coach/Admin login
     ├── /dashboard        → Coach portal
     ├── /admin            → Admin dashboard
-    └── /api/*            → Backend API routes
+    └── /api/*            → Next.js API routes
             │
-            ├── Google Sheets API  (data storage)
-            ├── Google Calendar API (events)
-            └── SMTP / Nodemailer  (email confirmations)
+            ▼
+    Google Apps Script Web App   ← runs inside your Google Sheet
+            │
+            ├── Coaches sheet    (coach profiles)
+            ├── Bookings sheet   (all bookings)
+            ├── BlockedSlots     (manually blocked slots)
+            └── CoachAuth        (hashed passwords)
+
+    SMTP / Nodemailer  → email confirmations (optional)
 ```
+
+---
 
 ## Google Sheets Schema
 
@@ -31,8 +42,8 @@ Next.js App (Vercel)
 | E | specialization | Short title |
 | F | bio | Description shown on card |
 | G | imageUrl | Profile photo URL |
-| H | calendarId | Google Calendar ID (optional) |
-| I | isActive | true/false |
+| H | calendarId | Leave blank (not required) |
+| I | isActive | true / false |
 | J | role | coach / admin |
 
 ### Sheet 2: `Bookings`
@@ -46,11 +57,11 @@ Next.js App (Vercel)
 | F | coachId | |
 | G | coachName | |
 | H | date | YYYY-MM-DD |
-| I | slot | "11:00 AM – 12:00 PM" |
+| I | slot | e.g. "11:00 AM – 12:00 PM" |
 | J | status | confirmed / cancelled / rescheduled |
 | K | timestamp | ISO timestamp |
 | L | confirmationId | 8-char alphanumeric |
-| M | calendarEventId | Google Calendar event ID |
+| M | calendarEventId | Leave blank |
 | N | notes | Optional |
 
 ### Sheet 3: `BlockedSlots`
@@ -68,75 +79,96 @@ Next.js App (Vercel)
 | A | coachId |
 | B | email |
 | C | passwordHash (bcrypt) |
-| D | role (coach/admin) |
+| D | role (coach / admin) |
 | E | name |
 
 ---
 
 ## Step-by-Step Setup
 
-### 1. Google Cloud Setup
+### Step 1 — Create a Google Sheet
 
-1. Go to [console.cloud.google.com](https://console.cloud.google.com)
-2. Create a new project (e.g. "coach-booking")
-3. Enable these APIs:
-   - Google Sheets API
-   - Google Calendar API
-4. Create a **Service Account**:
-   - IAM & Admin → Service Accounts → Create
-   - Name: `coach-booking-sa`
-   - Download the JSON key file
-5. **Share your Google Sheet** with the service account email (Editor access)
-6. If using Calendar: share each coach's Google Calendar with the service account (Editor)
+1. Go to [sheets.google.com](https://sheets.google.com) and create a new blank spreadsheet.
+2. Name it something like **Coach Booking**.
 
-### 2. Google Sheets Setup
+### Step 2 — Add the Apps Script backend
 
-1. Create a new Google Sheet
-2. Copy the Spreadsheet ID from the URL:
-   `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
-3. Run the setup script to create all sheets and headers:
-   ```bash
-   GOOGLE_SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com \
-   GOOGLE_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----" \
-   GOOGLE_SHEETS_SPREADSHEET_ID=your_sheet_id \
-   node scripts/setup-sheets.js
-   ```
+1. Inside the sheet, click **Extensions → Apps Script**.
+2. Delete any existing code in the editor.
+3. Open `apps-script/Code.gs` from this project and paste the entire contents.
+4. Click **Save** (floppy disk icon).
 
-### 3. Add Coach Data
+### Step 3 — Run `setupSheets()` once
 
-Fill in the `Coaches` sheet with your coaches.
+1. In the Apps Script editor, select **`setupSheets`** from the function dropdown.
+2. Click **Run**.
+3. Grant the requested permissions when prompted (the script only accesses your own sheet).
+4. Open **View → Execution log**.
+5. Copy the **`BOOKING_SECRET`** UUID printed in the log — you will need it in Step 5.
 
-Add credentials to `CoachAuth`:
+This automatically creates all 4 sheets with headers and adds 3 sample coaches.
+
+### Step 4 — Deploy as a Web App
+
+1. In the Apps Script editor click **Deploy → New Deployment**.
+2. Click the gear icon next to **Type** and choose **Web App**.
+3. Set:
+   - **Execute as:** Me
+   - **Who has access:** Anyone
+4. Click **Deploy** and copy the **Web App URL**.
+
+> Every time you edit `Code.gs` you must click **Deploy → Manage Deployments → Edit → New Version** to publish the changes.
+
+### Step 5 — Add coach data
+
+Fill in the `Coaches` sheet with your real coaches (replace the sample rows).
+
+Add login credentials to `CoachAuth`. Generate a bcrypt password hash:
 ```bash
 node scripts/hash-password.js MySecurePassword123
-# Copy the hash output into the CoachAuth sheet
+# Paste the output hash into column C of CoachAuth
 ```
 
-### 4. Environment Variables
+### Step 6 — Configure environment variables
 
-Copy `.env.example` to `.env.local`:
 ```bash
 cp .env.example .env.local
 ```
 
-Fill in all values:
-- `GOOGLE_SHEETS_SPREADSHEET_ID` – from step 2
-- `GOOGLE_SERVICE_ACCOUNT_EMAIL` – from the service account JSON key
-- `GOOGLE_PRIVATE_KEY` – from the JSON key (keep the `\n` escapes)
-- `NEXTAUTH_SECRET` – run `openssl rand -base64 32` to generate
-- `NEXTAUTH_URL` – your Vercel URL (e.g. `https://your-app.vercel.app`)
-- SMTP credentials for email confirmations
+Open `.env.local` and fill in:
 
-### 5. Local Development
+```env
+# From Step 4
+APPS_SCRIPT_URL=https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
+
+# From Step 3 (Execution log)
+APPS_SCRIPT_SECRET=paste-the-uuid-here
+
+# Generate with: openssl rand -base64 32
+NEXTAUTH_SECRET=your-random-secret
+
+# Your local or production URL
+NEXTAUTH_URL=http://localhost:3000
+```
+
+Email (optional — leave blank to skip confirmations):
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-gmail-app-password
+SMTP_FROM="Coach Booking <your-email@gmail.com>"
+```
+
+### Step 7 — Run locally
 
 ```bash
-cd coach-booking
 npm install
 npm run dev
 # Visit http://localhost:3000
 ```
 
-### 6. Vercel Deployment
+### Step 8 — Deploy to Vercel
 
 ```bash
 npm install -g vercel
@@ -144,11 +176,12 @@ vercel login
 vercel --prod
 ```
 
-Or connect your GitHub repo in the Vercel dashboard and it will auto-deploy.
+Or connect the GitHub repo in the Vercel dashboard for automatic deploys.
 
-**Add all environment variables** in Vercel Dashboard → Settings → Environment Variables.
+**Add all environment variables** in:
+Vercel Dashboard → Your Project → Settings → Environment Variables
 
-> **Important:** For `GOOGLE_PRIVATE_KEY`, paste the raw value including newlines — Vercel handles the escaping.
+Set `NEXTAUTH_URL` to your live Vercel URL (e.g. `https://your-app.vercel.app`).
 
 ---
 
@@ -156,25 +189,25 @@ Or connect your GitHub repo in the Vercel dashboard and it will auto-deploy.
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| GET | `/api/coaches?language=Hindi` | None | List coaches |
+| GET | `/api/coaches?language=Hindi` | None | List coaches (filtered by language) |
 | GET | `/api/slots?coachId=C001&date=2024-01-15` | None | Get slot availability |
 | POST | `/api/bookings` | None | Create a booking |
 | GET | `/api/bookings?date=2024-01-15` | Coach/Admin | List bookings |
 | PATCH | `/api/bookings/:id` | Coach/Admin | Update booking status |
 | POST | `/api/slots/block` | Coach/Admin | Block a slot |
 | DELETE | `/api/slots/block` | Coach/Admin | Unblock a slot |
-| GET | `/api/admin/coaches` | Admin only | List all coaches with private data |
+| GET | `/api/admin/coaches` | Admin only | List all coaches (with private fields) |
 
 ---
 
 ## Security
 
-- All coach passwords are **bcrypt hashed** (cost factor 10)
-- JWT sessions via NextAuth — no passwords stored in sessions
-- Role-based access: coaches can only see/modify their own data
-- API routes validate session and role before any data access
+- All coach passwords are **bcrypt hashed** (cost factor 10) — plain passwords are never stored
+- JWT sessions via NextAuth — credentials never travel after login
+- Role-based access: coaches can only see/modify their own data; admins see everything
+- Apps Script write endpoints are protected by a **secret token** stored in Script Properties
+- The secret token is never exposed to the browser — only used server-to-server
 - Input validated with Zod schemas on all POST endpoints
-- Google Sheets credentials never exposed to the browser
 
 ---
 
@@ -185,17 +218,16 @@ Integrate Twilio or WATI:
 ```bash
 npm install twilio
 ```
-Add to `lib/whatsapp.ts` and call after booking confirmation.
+Add to `lib/whatsapp.ts` and call it alongside `sendBookingConfirmation()`.
 
 ### Timezone Handling
 Set `BOOKING_TIMEZONE=America/New_York` (or any IANA timezone) in env vars.
-The calendar event creation already reads this env var.
 
 ### Buffer Time Between Slots
-Modify `ALL_SLOTS` in `types/index.ts` to leave 15-min gaps.
+Edit `ALL_SLOTS` in both `types/index.ts` and `apps-script/Code.gs` to add gaps.
 
 ### Reschedule/Cancel Links
-Generate signed tokens (use `crypto.createHmac`) and include in confirmation emails.
+Generate signed tokens (use `crypto.createHmac`) and include them in confirmation emails.
 
 ---
 
@@ -204,10 +236,10 @@ Generate signed tokens (use `crypto.createHmac`) and include in confirmation ema
 | Purpose | Library |
 |---------|---------|
 | Date manipulation | `date-fns` |
-| Form validation | `zod` |
+| Input validation | `zod` |
 | Authentication | `next-auth` |
-| Google APIs | `googleapis` |
 | Email | `nodemailer` |
 | Password hashing | `bcryptjs` |
-| UI components | Tailwind CSS (included) |
+| Styling | Tailwind CSS (included) |
 | Charts (admin) | `recharts` (add if needed) |
+| WhatsApp | `twilio` (add if needed) |
